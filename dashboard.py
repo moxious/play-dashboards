@@ -1,4 +1,5 @@
 import requests
+from requests.adapters import HTTPAdapter, Retry
 import json
 from random import randrange
 import time
@@ -33,7 +34,7 @@ def extract_datasources(dash):
 
 fieldNames = [
     'url', 'title', 'expires', 'created', 'created_dt', 'updated', 'updated_dt', 'updatedBy', 'createdBy', 'version', 'folderUrl', 'editable', 'datasources',
-    'panels', 'rows', 'links', 'tags', 'annotations', 'hasAcl', 'liveNow', 'panelTitles'
+    'panels', 'rows', 'links', 'tags', 'variables', 'annotations', 'variableNames', 'hasAcl', 'liveNow', 'panelTitles'
 ]
 
 users = {}
@@ -82,14 +83,20 @@ with open('dashboards.csv', 'w') as f:
     w = csv.DictWriter(f, fieldnames=fieldNames)
     w.writeheader()
 
+    session = requests.Session()
+    retries = Retry(total=5,
+                    backoff_factor=0.1,
+                    status_forcelist=[ 500, 502, 503, 504 ])
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+
     for x in range(0, limit):
         dash = dashboards[x]
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         if x % 100 == 0:
             print("%d dashboards so far..." % x)
 
-        deets = requests.get(base_url + "/api/dashboards/uid/" + dash['uid']).text
+        deets = session.get(base_url + "/api/dashboards/uid/" + dash['uid']).text
         j = json.loads(deets)
         # print(j)
 
@@ -109,7 +116,9 @@ with open('dashboards.csv', 'w') as f:
             'rows': len(j['dashboard'].get('rows', [])),
             'links': len(j['dashboard'].get('links', [])),
             'tags': ', '.join(j['dashboard'].get('tags', [])),
+            'variables': len(j['dashboard'].get('templating', {}).get('list', [])),
             'annotations': len(j['dashboard'].get('annotations', {"list":[]})['list']),
+            'variableNames': ', '.join([v["name"] for v in j['dashboard'].get('templating', {"list":[]}).get('list', [])]),
             'panelTitles': '\n'.join([panel.get('title', '') for panel in j['dashboard'].get('panels', [])]),
             'hasAcl': j['meta'].get('hasAcl', False),
             'liveNow': j['dashboard'].get('liveNow', False),
